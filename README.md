@@ -10,7 +10,12 @@ Maintainer: Svenljunga kommun
 
 `SVLJmTLSValidatorLUA` is a Lua-based validator that enforces strict mutual TLS (mTLS) in Apache HTTP Server using `mod_lua`.
 It verifies client X.509 certificates using local CA bundles, CRL validation, signature and EKU enforcement, and optional restrictions.
-The script supports high-security environments and is functionally equivalent to both the IIS module [`SVLJmTLSClientValidatorModule`](https://github.com/svenljungakommun/SVLJmTLSClientValidatorModule) and the Tomcat filter [`SVLJmTLSClientValidatorFilter`](https://github.com/svenljungakommun/SVLJmTLSClientValidatorFilter).
+
+**🔗 SVLJmTLSClientValidator**  
+SVLJmTLSClientValidator is available for .NET (IIS), Java (Tomcat), and Lua (Apache2), offering identical fail-closed mTLS validation across platforms.  
+[`SVLJmTLSClientValidatorModule`](https://github.com/svenljungakommun/SVLJmTLSClientValidatorModule) – .NET `IHttpModule` implementation for IIS  
+[`SVLJmTLSClientValidatorFilter`](https://github.com/svenljungakommun/SVLJmTLSClientValidatorFilter) – Java Servlet Filter for Tomcat  
+[`SVLJmTLSClientValidatorLUA`](https://github.com/svenljungakommun/SVLJmTLSClientValidatorLUA) – `mod_lua` implementation for Apache2
 
 ---
 
