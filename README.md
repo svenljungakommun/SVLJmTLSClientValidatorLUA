@@ -44,6 +44,18 @@ The script supports high-security environments and is functionally equivalent to
 
 ---
 
+## Compliance Alignment
+
+This module supports security controls required by:
+
+- **NIS2 Directive**
+- **ISO/IEC 27001 & 27002**
+- **GDPR (Art. 32 – Security of processing)**
+- **CIS Benchmarks**
+- **STIGs (US DoD)**
+
+---
+
 ## Requirements
 
 * **Apache HTTP Server 2.4+**
