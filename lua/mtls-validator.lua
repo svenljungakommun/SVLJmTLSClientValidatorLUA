@@ -102,41 +102,53 @@ end
 
 -- Main Apache hook
 function validate_mtls(r)
-    if r.uri:match("^" .. (conf.error_redirect_url or "/403c.html")) then
-        return apache2.DECLINED
-    end
-
+    
+    -- Internal bypass (e.g. localhost, 127.0.0.1)
     local client_ip = r.useragent_ip or r.connection.remote_ip
     if conf.internal_bypass_ips and is_bypass_ip(client_ip) then
         return apache2.DECLINED
     end
 
+    -- Require HTTPS
     local ssl_protocol = r.subprocess_env["SSL_PROTOCOL"]
     if not ssl_protocol or ssl_protocol == "" then
         return redirect("insecure-connection")
     end
 
+    -- Bypass error_redirect_url
+    if r.uri:match("^" .. (conf.error_redirect_url or "/403c.html")) then
+        return apache2.DECLINED
+    end
+    
+    -- Check for certificate in request
     local pem = r.subprocess_env["SSL_CLIENT_CERT"]
     if not pem then return redirect("cert-missing") end
-
     local cert = x509.read(pem)
     if not cert then return redirect("cert-missing") end
 
+    -- Step 1: Expose cert info via HTTP headers
+    r.subprocess_env["HTTP_SVLJ_SUBJECT"]      = cert:subject():oneline()
+    r.subprocess_env["HTTP_SVLJ_ISSUER"]       = cert:issuer():oneline()
+    r.subprocess_env["HTTP_SVLJ_SERIAL"]       = cert:serial():tostring()
+    r.subprocess_env["HTTP_SVLJ_VALIDFROM"]    = os.date("!%Y-%m-%dT%H:%M:%SZ", cert:notbefore())
+    r.subprocess_env["HTTP_SVLJ_VALIDTO"]      = os.date("!%Y-%m-%dT%H:%M:%SZ", cert:notafter())
+    r.subprocess_env["HTTP_SVLJ_SIGNATUREALG"] = cert:sig_alg()
+    local client_fp = digest.new("sha1"):final(cert:export("DER")):gsub(".", function(c)
+        return string.format("%02X", c:byte())
+    end)
+    r.subprocess_env["HTTP_SVLJ_THUMBPRINT"] = client_fp
+
+    -- Check certificate validity window
     local now = os.time()
     if cert:notbefore() > now then
         return redirect("cert-notyetvalid")
+
+    -- Check certificate validity window
     elseif cert:notafter() < now then
         return redirect("cert-expired")
     end
 
-    if conf.allowed_signature_algorithms then
-        local sigalg = cert:sig_alg()
-        if not conf.allowed_signature_algorithms[sigalg] then
-            return redirect("sigalg-not-allowed")
-        end
-    end
-
-    -- Match issuer CN + optional thumbprint
+    -- Check expected Issuer CN and optional issuer thumbprint
     local found = false
     local bundle = io.open(conf.ca_bundle_path, "r")
     if not bundle then return redirect("issuer-not-trusted") end
@@ -161,21 +173,15 @@ function validate_mtls(r)
     end
     if not found then return redirect("issuer-not-trusted") end
 
+    -- Validate certificate chain against trusted CA bundle
     local ok, reason = validate_chain(cert, conf.ca_bundle_path)
     if not ok then return redirect(reason) end
 
+    -- Validate certificate revocation using CDP/CRL over http/https
     local ok, reason = check_crl(cert)
     if not ok then return redirect(reason) end
 
-    if conf.allowed_client_thumbprints then
-        local client_fp = digest.new("sha1"):final(cert:export("DER")):gsub(".", function(c)
-            return string.format("%02X", c:byte())
-        end)
-        if not conf.allowed_client_thumbprints[client_fp] then
-            return redirect("client-thumbprint-not-allowed")
-        end
-    end
-
+    -- Check optional strict SerialNumber whitelist
     if conf.cert_serial_numbers then
         local serial = cert:serial():tostring()
         if not conf.cert_serial_numbers[serial] then
@@ -183,6 +189,7 @@ function validate_mtls(r)
         end
     end
 
+    -- Optional EKU enforcement
     if conf.allowed_eku_oids then
         local eku_valid = false
         for _, e in ipairs(cert:extensions()) do
@@ -197,6 +204,24 @@ function validate_mtls(r)
         end
         if not eku_valid then
             return redirect("eku-not-allowed")
+        end
+    end
+
+    -- Optional Signature Algorithms enforcement
+    if conf.allowed_signature_algorithms then
+        local sigalg = cert:sig_alg()
+        if not conf.allowed_signature_algorithms[sigalg] then
+            return redirect("sigalg-not-allowed")
+        end
+    end
+
+    -- Optional Client Thumbprint enforcement
+    if conf.allowed_client_thumbprints then
+        local client_fp = digest.new("sha1"):final(cert:export("DER")):gsub(".", function(c)
+            return string.format("%02X", c:byte())
+        end)
+        if not conf.allowed_client_thumbprints[client_fp] then
+            return redirect("client-thumbprint-not-allowed")
         end
     end
 
